@@ -1,0 +1,21 @@
+{
+  "name": "ws-debugger",
+  "version": "4.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test \"tests/*.test.js\"",
+    "test:ui": "node tests/ui.smoke.mjs",
+    "serve": "python3 -m http.server 8080 -d public",
+    "serve:dist": "python3 -m http.server 8081 -d dist"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "jsdom": "^26.1.0",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

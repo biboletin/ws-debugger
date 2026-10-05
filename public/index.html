@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self' ws: wss:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'" />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#080c10" />
+  <title>WS Debugger — WebSocket testing tool</title>
+  <meta name="description" content="Browser-based WebSocket debugger: connect to ws:// or wss:// endpoints, send messages and inspect traffic. Runs entirely in your browser." />
+  <meta property="og:title" content="WS Debugger" />
+  <meta property="og:description" content="Browser-based WebSocket debugging tool." />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="css/fonts.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body data-state="idle">
+  <div class="app" id="app">
+    <header class="topbar">
+      <div class="header-brand">
+        <svg class="icon icon-brand" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+        <h1>WS Debugger</h1>
+      </div>
+      <div class="status-pill" id="status-pill" role="status">
+        <div class="status-dot"></div>
+        <span id="status-text" data-i18n="status.closed">Disconnected</span>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="btn-inspect" type="button" data-i18n-title="insp.open" data-i18n-aria-label="insp.open" title="Open inspector" aria-label="Open inspector">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-theme" type="button" data-i18n-title="btn.theme" data-i18n-aria-label="btn.theme" title="Toggle theme" aria-label="Toggle theme">
+          <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+          <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="btn-settings" type="button" data-i18n-title="btn.settings" data-i18n-aria-label="btn.settings" title="Settings" aria-label="Settings">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+        </button>
+      </div>
+      <div class="stats-bar">
+        <div class="stat"><span class="stat-label" data-i18n="stat.sent">Sent</span><span class="stat-value" id="stat-sent">0</span></div>
+        <div class="stat"><span class="stat-label" data-i18n="stat.recv">Received</span><span class="stat-value" id="stat-recv">0</span></div>
+        <div class="stat"><span class="stat-label" data-i18n="stat.latency">Latency</span><span class="stat-value" id="stat-latency">—</span></div>
+        <div class="stat"><span class="stat-label" data-i18n="stat.uptime">Uptime</span><span class="stat-value" id="stat-uptime">—</span></div>
+        <div class="shortcuts">
+          <kbd>↵</kbd> <span data-i18n="shortcut.send">send</span>
+          <kbd>Esc</kbd> <span data-i18n="shortcut.blur">blur</span>
+          <kbd>⌘K</kbd> <span data-i18n="shortcut.clear">clear log</span>
+        </div>
+      </div>
+    </header>
+
+    <section class="conn">
+      <input id="url-input" type="text" inputmode="url" enterkeyhint="go" data-i18n-placeholder="url.placeholder" data-i18n-aria-label="url.aria" placeholder="wss://example.com/socket" aria-label="WebSocket URL" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="2048" />
+      <button id="btn-connect" class="btn-primary" type="button">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        <span class="btn-label" data-i18n="btn.connect">Connect</span>
+      </button>
+      <button id="btn-disconnect" class="btn-danger" type="button" disabled>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <span class="btn-label" data-i18n="btn.disconnect">Disconnect</span>
+      </button>
+    </section>
+
+    <div class="filter-bar" id="filter-bar">
+      <div class="filter-search">
+        <svg class="icon icon-muted" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="filter-text" type="text" enterkeyhint="search" data-i18n-placeholder="filter.placeholder" data-i18n-aria-label="filter.placeholder" placeholder="Filter messages…" aria-label="Filter messages…" autocomplete="off" autocapitalize="off" spellcheck="false" />
+        <button class="filter-clear-btn" id="filter-clear" type="button" data-i18n-title="filter.clear" data-i18n-aria-label="filter.clear" title="Clear filter" aria-label="Clear filter" hidden>✕</button>
+      </div>
+      <div class="filter-types" role="group" data-i18n-aria-label="filter.label" aria-label="Filter by type">
+        <button class="filter-type active" type="button" data-type="all" data-i18n="filter.all">All</button>
+        <button class="filter-type" type="button" data-type="send" data-i18n="filter.send">Sent</button>
+        <button class="filter-type" type="button" data-type="recv" data-i18n="filter.recv">Received</button>
+        <button class="filter-type" type="button" data-type="errors" data-i18n="filter.errors">Errors</button>
+        <button class="filter-type" type="button" data-type="info" data-i18n="filter.info">Info</button>
+      </div>
+      <span class="filter-count" id="filter-count"></span>
+      <div class="filter-actions">
+        <button class="icon-btn" id="btn-clear" type="button" data-i18n-aria-label="btn.clear" data-i18n-title="btn.clear" aria-label="Clear log" title="Clear log">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-export" type="button" data-i18n-aria-label="btn.export" data-i18n-title="btn.export" aria-label="Export log" title="Export log">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <main id="log" role="log" aria-live="polite" tabindex="0">
+      <div class="empty-state" id="empty-state">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+        <span data-i18n="log.empty">No messages yet. Enter a ws:// or wss:// address and press Connect.</span>
+      </div>
+    </main>
+
+    <footer class="composer">
+      <select id="msg-type" data-i18n-aria-label="msg.type_aria" aria-label="Message type">
+        <option value="raw" data-i18n="msg.raw">Text</option>
+        <option value="json" data-i18n="msg.json" selected>JSON</option>
+        <option value="hex" data-i18n="msg.hex">Hex</option>
+        <option value="ping" data-i18n="msg.ping">Ping</option>
+      </select>
+      <button id="btn-templates" class="icon-btn" type="button" data-i18n-title="tpl.open" data-i18n-aria-label="tpl.open" title="Message templates" aria-label="Message templates">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+      </button>
+      <input id="msg-input" type="text" enterkeyhint="send" data-i18n-placeholder="msg.placeholder" data-i18n-aria-label="msg.aria" placeholder="Message to send…" aria-label="Message to send" autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <button id="btn-send" class="btn-send" type="button" disabled data-i18n-aria-label="btn.send" aria-label="Send">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        <span class="btn-label" data-i18n="btn.send">Send</span>
+      </button>
+    </footer>
+  </div>
+
+  <div class="modal-overlay" id="settings-overlay" role="dialog" aria-modal="true" data-i18n-aria-label="settings.title" aria-label="Settings">
+    <div class="modal">
+      <div class="modal-header">
+        <span data-i18n="settings.title">Settings</span>
+        <button class="icon-btn" id="btn-settings-close" type="button" data-i18n-aria-label="settings.close" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="setting-group setting-row">
+          <span class="setting-label" id="lbl-reconnect" data-i18n="reconnect.label">Auto-reconnect</span>
+          <div class="toggle" id="toggle-reconnect" role="switch" tabindex="0" aria-checked="true" aria-labelledby="lbl-reconnect"></div>
+          <span class="setting-hint" data-i18n="reconnect.title">Reconnect automatically if the connection drops</span>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label" for="cfg-lang" data-i18n="settings.language">Language</label>
+          <select id="cfg-lang" class="setting-input">
+            <option value="en">English</option>
+            <option value="bg">Български</option>
+          </select>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label" for="cfg-protocols" data-i18n="settings.protocols">Subprotocols (optional)</label>
+          <input class="setting-input" id="cfg-protocols" type="text" maxlength="512" autocomplete="off" autocapitalize="off" spellcheck="false" />
+          <span class="setting-hint" data-i18n="settings.protocols_hint"></span>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label" for="cfg-heartbeat" data-i18n="settings.heartbeat">Heartbeat interval (ms)</label>
+          <input class="setting-input" id="cfg-heartbeat" type="number" min="0" step="1000" />
+          <span class="setting-hint" id="hint-heartbeat"></span>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label" for="cfg-reconnect-delay" data-i18n="settings.reconnect_delay">Reconnect base delay (ms)</label>
+          <input class="setting-input" id="cfg-reconnect-delay" type="number" min="1000" step="500" />
+        </div>
+        <div class="setting-group">
+          <label class="setting-label" for="cfg-max-delay" data-i18n="settings.max_delay">Reconnect max delay (ms)</label>
+          <input class="setting-input" id="cfg-max-delay" type="number" min="1000" step="1000" />
+        </div>
+        <div class="setting-group">
+          <label class="setting-label" for="cfg-max-attempts" data-i18n="settings.max_attempts">Max reconnect attempts</label>
+          <input class="setting-input" id="cfg-max-attempts" type="number" min="0" max="10" step="1" />
+          <span class="setting-hint" id="hint-attempts"></span>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label" for="cfg-max-log" data-i18n="settings.max_log">Max log entries</label>
+          <input class="setting-input" id="cfg-max-log" type="number" min="50" max="2000" step="50" />
+        </div>
+        <div class="setting-group">
+          <span class="setting-label" data-i18n="settings.clear_history">Saved data</span>
+          <button class="setting-btn-danger" id="btn-clear-history" type="button" data-i18n="settings.clear_btn">Clear saved URL &amp; settings</button>
+        </div>
+        <div class="setting-group">
+          <span class="setting-label" data-i18n="settings.limits_title">Safety limits</span>
+          <span class="setting-hint" id="limits-text"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="tpl-overlay" role="dialog" aria-modal="true" aria-labelledby="tpl-title">
+    <div class="modal">
+      <div class="modal-header">
+        <span id="tpl-title" data-i18n="tpl.title">Templates</span>
+        <button class="icon-btn" id="btn-tpl-close" type="button" data-i18n-aria-label="insp.close" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="setting-group">
+          <label class="setting-label" for="tpl-name" data-i18n="tpl.name_label">Template name</label>
+          <div class="tpl-save">
+            <input class="setting-input" id="tpl-name" type="text" maxlength="40" data-i18n-placeholder="tpl.name_ph" placeholder="e.g. subscribe" autocomplete="off" autocapitalize="off" spellcheck="false" />
+            <button class="btn-primary" id="btn-tpl-save" type="button" data-i18n="tpl.save">Save</button>
+          </div>
+          <span class="setting-hint" id="tpl-status" role="status"></span>
+          <span class="setting-hint" data-i18n="tpl.privacy"></span>
+          <span class="setting-hint" id="tpl-vars"></span>
+        </div>
+        <div class="tpl-list" id="tpl-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="insp-overlay" role="dialog" aria-modal="true" aria-labelledby="insp-title">
+    <div class="modal sheet-tall">
+      <div class="modal-header">
+        <span id="insp-title" data-i18n="insp.title">Inspector</span>
+        <button class="icon-btn" id="btn-insp-close" type="button" data-i18n-aria-label="insp.close" aria-label="Close">✕</button>
+      </div>
+      <div class="tabs" role="tablist">
+        <button class="tab" type="button" role="tab" data-tab="conn" aria-selected="true" data-i18n="insp.tab.conn">Connection</button>
+        <button class="tab" type="button" role="tab" data-tab="handshake" aria-selected="false" tabindex="-1" data-i18n="insp.tab.handshake">Handshake</button>
+        <button class="tab" type="button" role="tab" data-tab="learn" aria-selected="false" tabindex="-1" data-i18n="insp.tab.learn">Learn</button>
+        <button class="tab" type="button" role="tab" data-tab="codes" aria-selected="false" tabindex="-1" data-i18n="insp.tab.codes">Close codes</button>
+      </div>
+      <div class="modal-body" id="insp-body" role="tabpanel"></div>
+    </div>
+  </div>
+
+  <noscript>This tool requires JavaScript.</noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
