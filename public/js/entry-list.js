@@ -42,8 +42,8 @@ async function copyText(text) {
 }
 
 export class LogView {
-  #box; #empty; #els = new Map(); #queue = []; #raf = 0;
-  constructor({ container, emptyEl }) { this.#box = container; this.#empty = emptyEl; }
+  #box; #empty; #onPick; #els = new Map(); #btns = new Map(); #queue = []; #raf = 0;
+  constructor({ container, emptyEl, onPick }) { this.#box = container; this.#empty = emptyEl; this.#onPick = onPick; }
 
   add(entry, visible = true) {
     this.#queue.push({ entry, visible });
@@ -54,7 +54,7 @@ export class LogView {
     if (!ids.length) return;
     const set = new Set(ids);
     this.#queue = this.#queue.filter((q) => !set.has(q.entry.id));
-    for (const id of ids) { this.#els.get(id)?.remove(); this.#els.delete(id); }
+    for (const id of ids) { this.#els.get(id)?.remove(); this.#els.delete(id); this.#btns.delete(id); }
     this.#syncEmpty();
   }
 
@@ -62,7 +62,16 @@ export class LogView {
     this.#queue = [];
     for (const el of this.#els.values()) el.remove();
     this.#els.clear();
+    this.#btns.clear();
     this.#syncEmpty();
+  }
+
+  setPicked(ids) {
+    for (const [id, btn] of this.#btns) {
+      const on = ids.includes(id);
+      btn.setAttribute('aria-pressed', String(on));
+      this.#els.get(id)?.classList.toggle('picked', on);
+    }
   }
 
   refilter(entries, pred) {
@@ -107,6 +116,16 @@ export class LogView {
       }
     });
     copy.append(btn);
+    if (this.#onPick && entry.kind !== 'system' && (entry.type === 'send' || entry.type === 'recv')) {
+      const diff = document.createElement('button');
+      diff.type = 'button'; diff.className = 'entry-diff';
+      diff.textContent = t('log.diff');
+      diff.setAttribute('aria-label', t('log.diff_aria'));
+      diff.setAttribute('aria-pressed', 'false');
+      diff.addEventListener('click', () => this.#onPick(entry));
+      this.#btns.set(entry.id, diff);
+      copy.append(diff);
+    }
     el.append(mk('entry-ts', formatTime(entry.ts)), mk('entry-tag', entry.tag), body, copy);
     return el;
   }

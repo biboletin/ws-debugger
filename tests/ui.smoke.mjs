@@ -14,7 +14,10 @@ const wss = new WebSocketServer({ port: 0 });
 await new Promise((r) => wss.on('listening', r));
 wss.on('connection', (s) => {
   s.send('<img src=x onerror="window.__xss=1"><script>window.__xss=2</script>');
-  s.on('message', (d, bin) => s.send(d, { binary: bin }));
+  s.on('message', (d, bin) => {
+    if (!bin) { try { if (JSON.parse(d.toString()).type === 'ping') { s.send('{"type":"pong"}'); return; } } catch { /* not JSON */ } }
+    s.send(d, { binary: bin });
+  });
 });
 const url = `ws://127.0.0.1:${wss.address().port}`;
 
@@ -108,6 +111,39 @@ d.querySelector('.tpl-del').dispatchEvent(new w.MouseEvent('click', { bubbles: t
 assert.equal(d.querySelectorAll('.tpl-row').length, 0); assert.equal(w.localStorage.getItem('wsd.templates'), '[]');
 click('btn-tpl-close'); await wait(20);
 assert.ok(!$('tpl-overlay').classList.contains('open'));
+
+// diff: pick two JSON entries -> structure diff -> lines mode
+$('msg-type').value = 'json'; $('msg-type').dispatchEvent(new w.Event('change'));
+$('msg-input').value = '{"a":2,"b":[true,null],"c":1}'; click('btn-send'); await wait(300);
+const diffBtn = (needle) => [...d.querySelectorAll('.entry.send')].find((e) => e.textContent.includes(needle)).querySelector('.entry-diff');
+const hit = (b) => b.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+hit(diffBtn('"a": 1'));
+assert.equal($('compare-bar').hidden, false); assert.equal(d.querySelectorAll('.entry.picked').length, 1);
+hit($('btn-compare-cancel')); assert.equal($('compare-bar').hidden, true); assert.equal(d.querySelectorAll('.entry.picked').length, 0);
+hit(diffBtn('"a": 1')); hit(diffBtn('"a": 2')); await wait(40);
+assert.ok($('diff-overlay').classList.contains('open')); assert.equal($('compare-bar').hidden, true);
+assert.equal(d.querySelectorAll('#diff-body .diff-row').length, 2);
+const rows = d.querySelector('#diff-body').textContent;
+assert.match(rows, /\$\.a/); assert.match(rows, /\$\.c/); assert.match(rows, /- 1/); assert.match(rows, /\+ 2/);
+assert.equal(d.querySelectorAll('#diff-modes button').length, 2);
+hit(d.querySelectorAll('#diff-modes button')[1]); await wait(20);
+assert.ok(d.querySelector('#diff-body .diff-line.diff-add')); assert.ok(d.querySelector('#diff-body .diff-line.diff-del'));
+click('btn-diff-close'); await wait(20);
+assert.ok(!$('diff-overlay').classList.contains('open')); assert.equal($('app').inert, false);
+
+// charts: ping -> pong -> latency samples; throughput charts
+$('msg-type').value = 'ping'; $('msg-type').dispatchEvent(new w.Event('change'));
+click('btn-send'); await wait(300);
+assert.match($('stat-latency').textContent, /\d+ ms/);
+click('btn-inspect'); await wait(40);
+d.querySelector('.tab[data-tab="charts"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true })); await wait(60);
+assert.equal(d.querySelectorAll('#insp-body svg.chart').length, 3);
+assert.ok(d.querySelector('#insp-body .chart-dot.latency'));
+assert.match(d.querySelector('#insp-body .kv').textContent, /Samples/);
+assert.ok(d.querySelector('#insp-body svg.chart[role="img"] title').textContent.length > 5);
+assert.ok(d.querySelectorAll('#insp-body .chart-line.sent').length >= 1);
+click('btn-insp-close'); await wait(20);
+$('msg-type').value = 'json'; $('msg-type').dispatchEvent(new w.Event('change'));
 
 // filter
 $('filter-text').value = 'hello'; $('filter-text').dispatchEvent(new w.Event('input')); await wait(60);

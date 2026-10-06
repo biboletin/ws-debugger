@@ -104,6 +104,11 @@
       </div>
     </main>
 
+    <div class="compare-bar" id="compare-bar" hidden>
+      <span id="compare-text" data-i18n="diff.bar">Selected 1 of 2: pick another message to compare.</span>
+      <button id="btn-compare-cancel" type="button" data-i18n="diff.cancel">Cancel</button>
+    </div>
+
     <footer class="composer">
       <select id="msg-type" data-i18n-aria-label="msg.type_aria" aria-label="Message type">
         <option value="raw" data-i18n="msg.raw">Text</option>
@@ -180,6 +185,17 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="diff-overlay" role="dialog" aria-modal="true" aria-labelledby="diff-title">
+    <div class="modal sheet-tall">
+      <div class="modal-header">
+        <span id="diff-title" data-i18n="diff.title">Compare messages</span>
+        <button class="icon-btn" id="btn-diff-close" type="button" data-i18n-aria-label="insp.close" aria-label="Close">✕</button>
+      </div>
+      <div class="tabs" id="diff-modes" role="tablist" hidden></div>
+      <div class="modal-body" id="diff-body"></div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="tpl-overlay" role="dialog" aria-modal="true" aria-labelledby="tpl-title">
     <div class="modal">
       <div class="modal-header">
@@ -210,6 +226,7 @@
       </div>
       <div class="tabs" role="tablist">
         <button class="tab" type="button" role="tab" data-tab="conn" aria-selected="true" data-i18n="insp.tab.conn">Connection</button>
+        <button class="tab" type="button" role="tab" data-tab="charts" aria-selected="false" tabindex="-1" data-i18n="insp.tab.charts">Charts</button>
         <button class="tab" type="button" role="tab" data-tab="handshake" aria-selected="false" tabindex="-1" data-i18n="insp.tab.handshake">Handshake</button>
         <button class="tab" type="button" role="tab" data-tab="learn" aria-selected="false" tabindex="-1" data-i18n="insp.tab.learn">Learn</button>
         <button class="tab" type="button" role="tab" data-tab="codes" aria-selected="false" tabindex="-1" data-i18n="insp.tab.codes">Close codes</button>

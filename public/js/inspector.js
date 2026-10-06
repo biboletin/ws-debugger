@@ -3,9 +3,12 @@
 import { t } from './i18n.js';
 import { redactUrl } from './security.js';
 import { formatBytes, formatUptime } from './utils.js';
+import { lineChart, niceMax } from './charts.js';
+import { latencyStats } from './metrics.js';
 import { CLOSE_CODES, CODE_NAMES, closeCodeKey, buildHandshakePreview, computeAccept, randomKey } from './protocol-info.js';
 
-export const TABS = ['conn', 'handshake', 'learn', 'codes'];
+export const TABS = ['conn', 'charts', 'handshake', 'learn', 'codes'];
+const LIVE = ['conn', 'charts'];
 export const LEARN_TOPICS = ['what', 'handshake', 'frames', 'masking', 'pingpong', 'subproto', 'ext', 'close', 'tls', 'origin', 'limits'];
 
 const h = (tag, cls, text) => {
@@ -37,7 +40,7 @@ export class Inspector {
   setOpen(v) {
     this.#open = v;
     clearInterval(this.#timer); this.#timer = 0;
-    if (v) { this.refresh(); this.#timer = setInterval(() => { if (this.#tab === 'conn') this.refresh(); }, 1000); }
+    if (v) { this.refresh(); this.#timer = setInterval(() => { if (LIVE.includes(this.#tab)) this.refresh(); }, 1000); }
   }
   selectTab(name) {
     if (!TABS.includes(name)) return;
@@ -53,7 +56,7 @@ export class Inspector {
   /** Called on every event; `structural` = open/close/state changes. */
   touch(structural = false) {
     if (!this.#open || this.#raf) return;
-    if (this.#tab !== 'conn' && !(structural && this.#tab !== 'learn')) return;
+    if (!LIVE.includes(this.#tab) && !(structural && this.#tab !== 'learn')) return;
     this.#raf = requestAnimationFrame(() => { this.#raf = 0; this.refresh(); });
   }
 
@@ -61,7 +64,7 @@ export class Inspector {
     const id = ++this.#renderId;
     const keep = this.#body.scrollTop;
     this.#body.textContent = '';
-    const render = { conn: () => this.#conn(), handshake: () => this.#handshake(id), learn: () => this.#learn(), codes: () => this.#codes() }[this.#tab];
+    const render = { conn: () => this.#conn(), charts: () => this.#charts(), handshake: () => this.#handshake(id), learn: () => this.#learn(), codes: () => this.#codes() }[this.#tab];
     render();
     this.#body.scrollTop = keep;
   }
@@ -108,6 +111,58 @@ export class Inspector {
       ol.append(li);
     }
     root.append(ol);
+  }
+
+  #charts() {
+    const root = this.#body;
+    const m = this.#ctx.metrics();
+    if (!this.#ctx.session()) { root.append(h('p', 'muted', t('chart.no_conn'))); return; }
+    const now = Date.now();
+    const ago = (ms) => (ms < 1500 ? t('chart.now') : t('chart.ago', { s: Math.round(ms / 1000) }));
+    const stats = latencyStats(m.latency);
+    root.append(h('h3', 'section-title', t('chart.latency')), h('p', 'muted', t('chart.latency_hint')));
+    if (!stats) {
+      root.append(h('p', 'muted', t('chart.no_latency')));
+    } else {
+      const ms = (v) => `${Math.round(v * 10) / 10} ms`;
+      const dl = h('dl', 'kv');
+      for (const [k, v] of [['chart.last', stats.last], ['chart.min', stats.min], ['chart.avg', stats.avg], ['chart.p95', stats.p95], ['chart.max', stats.max], ['chart.jitter', stats.jitter]]) {
+        dl.append(h('dt', null, t(k)), h('dd', null, ms(v)));
+      }
+      dl.append(h('dt', null, t('chart.samples')), h('dd', null, String(stats.n)));
+      const t0 = m.latency[0].t, t1 = m.latency[m.latency.length - 1].t, span = Math.max(t1 - t0, 1);
+      const points = m.latency.map((x) => ({ x: m.latency.length === 1 ? 0.5 : (x.t - t0) / span, y: x.ms }));
+      root.append(dl, lineChart({
+        series: [{ cls: 'latency', points, dots: true }], yMax: niceMax(stats.max), yFormat: (v) => String(Math.round(v)),
+        xLabels: [ago(now - t0), ago(now - t1)], label: t('chart.aria_latency', { n: stats.n, last: Math.round(stats.last) }),
+      }));
+    }
+    const s = m.series(60, now);
+    const pts = (vals) => vals.map((y, i) => ({ x: i / 59, y }));
+    const legend = () => {
+      const l = h('div', 'legend');
+      for (const [cls, key] of [['sent', 'chart.sent'], ['recv', 'chart.recv']]) {
+        const item = h('span');
+        item.append(h('span', `swatch ${cls}`), t(key));
+        l.append(item);
+      }
+      return l;
+    };
+    const xl = [t('chart.ago', { s: 59 }), t('chart.now')];
+    root.append(
+      h('h3', 'section-title', t('chart.msgs')), legend(),
+      lineChart({
+        series: [{ cls: 'sent', points: pts(s.sentMsgs) }, { cls: 'recv', points: pts(s.recvMsgs) }],
+        yMax: niceMax(Math.max(1, ...s.sentMsgs, ...s.recvMsgs)), yFormat: (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1)),
+        xLabels: xl, label: t('chart.aria_rate'),
+      }),
+      h('h3', 'section-title', t('chart.bytes')), legend(),
+      lineChart({
+        series: [{ cls: 'sent', points: pts(s.sentBytes) }, { cls: 'recv', points: pts(s.recvBytes) }],
+        yMax: niceMax(Math.max(10, ...s.sentBytes, ...s.recvBytes)), yFormat: (v) => formatBytes(Math.round(v)),
+        xLabels: xl, label: t('chart.aria_rate'),
+      }),
+    );
   }
 
   async #handshake(id) {

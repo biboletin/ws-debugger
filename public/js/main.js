@@ -10,6 +10,8 @@ import { Session } from './session.js';
 import { Sheet } from './sheet.js';
 import { Inspector, TABS } from './inspector.js';
 import { TemplatePanel } from './templates-ui.js';
+import { DiffPanel } from './diff-ui.js';
+import { Metrics } from './metrics.js';
 
 const $ = (id) => document.getElementById(id);
 const el = Object.fromEntries([
@@ -17,7 +19,7 @@ const el = Object.fromEntries([
   'filter-text', 'filter-clear', 'filter-count', 'log', 'empty-state', 'url-input', 'btn-connect', 'btn-disconnect',
   'btn-clear', 'btn-export', 'toggle-reconnect', 'msg-type', 'msg-input', 'btn-send', 'settings-overlay',
   'btn-settings-close', 'cfg-lang', 'cfg-heartbeat', 'cfg-reconnect-delay', 'cfg-max-delay', 'cfg-max-attempts',
-  'cfg-max-log', 'cfg-protocols', 'btn-clear-history', 'btn-inspect', 'btn-templates', 'tpl-overlay', 'btn-tpl-close', 'tpl-name', 'btn-tpl-save', 'tpl-status', 'tpl-vars', 'tpl-list', 'insp-overlay', 'btn-insp-close', 'insp-body', 'hint-heartbeat', 'hint-attempts', 'limits-text',
+  'cfg-max-log', 'cfg-protocols', 'btn-clear-history', 'btn-inspect', 'compare-bar', 'btn-compare-cancel', 'diff-overlay', 'btn-diff-close', 'diff-body', 'diff-modes', 'btn-templates', 'tpl-overlay', 'btn-tpl-close', 'tpl-name', 'btn-tpl-save', 'tpl-status', 'tpl-vars', 'tpl-list', 'insp-overlay', 'btn-insp-close', 'insp-body', 'hint-heartbeat', 'hint-attempts', 'limits-text',
 ].map((id) => [id, $(id)]));
 
 // ── State ────────────────────────────────────────────────────────────────
@@ -29,7 +31,8 @@ const filter = { type: 'all', text: '' };
 const msgHistory = []; let histIdx = -1; // in-memory only: may contain secrets
 
 const store = new LogStore(settings.maxLogEntries);
-const view = new LogView({ container: el.log, emptyEl: el['empty-state'] });
+let picks = []; // entry ids selected for comparison
+const view = new LogView({ container: el.log, emptyEl: el['empty-state'], onPick: (e) => pick(e) });
 const client = new WsClient({
   heartbeatMs: settings.heartbeatMs,
   reconnect: { enabled: autoReconnect, maxAttempts: settings.maxAttempts, baseDelay: settings.reconnectDelay, maxDelay: settings.maxDelay },
@@ -37,11 +40,13 @@ const client = new WsClient({
 
 const app = $('app');
 const session = new Session();
+const metrics = new Metrics();
 const inspector = new Inspector({
   body: el['insp-body'],
   tabButtons: [...document.querySelectorAll('.tab')].filter((b) => TABS.includes(b.dataset.tab)),
   ctx: {
     session: () => session.data,
+    metrics: () => metrics,
     client: () => ({ state: client.state, info: client.info }),
     draft: () => {
       const v = validateWsUrl(el['url-input'].value, { pageProtocol: location.protocol });
@@ -49,6 +54,10 @@ const inspector = new Inspector({
       return { url: v.ok ? v.url : '', protocols: p.ok ? p.list : [] };
     },
   },
+});
+
+const diffPanel = new DiffPanel({
+  overlay: el['diff-overlay'], app, body: el['diff-body'], modesEl: el['diff-modes'], closeBtn: el['btn-diff-close'],
 });
 
 const templates = new TemplatePanel({
@@ -81,9 +90,24 @@ function scheduleCount() {
   });
 }
 
+function syncPicks() { view.setPicked(picks); el['compare-bar'].hidden = picks.length !== 1; }
+function pick(entry) {
+  const i = picks.indexOf(entry.id);
+  if (i >= 0) picks.splice(i, 1); else picks.push(entry.id);
+  if (picks.length === 2) {
+    const [a, b] = picks.map((id) => store.entries.find((x) => x.id === id));
+    picks = []; syncPicks();
+    if (a && b) diffPanel.show(a, b);
+    return;
+  }
+  syncPicks();
+}
+el['btn-compare-cancel'].addEventListener('click', () => { picks = []; syncPicks(); });
+
 function addEntry(e) {
   const { entry, dropped } = store.add(e);
   view.remove(dropped);
+  if (dropped.length && picks.some((id) => dropped.includes(id))) { picks = picks.filter((id) => !dropped.includes(id)); syncPicks(); }
   view.add(entry, LogStore.matches(entry, filter));
   scheduleCount();
 }
@@ -137,9 +161,9 @@ client.on('open', (info) => {
     ms: info.connectMs, protocol: info.protocol || t('info.none'), ext: info.extensions || t('info.none'),
   }));
 });
-client.on('sent', (d) => { session.sent(d.size); inspector.touch(); sent += 1; el['stat-sent'].textContent = String(sent); logPayload('send', d.origin === 'heartbeat' ? 'PING' : 'SEND', d); });
-client.on('message', (d) => { session.message(d.size); inspector.touch(); recv += 1; el['stat-recv'].textContent = String(recv); logPayload('recv', 'RECV', d); });
-client.on('latency', ({ ms }) => { el['stat-latency'].textContent = `${ms} ms`; });
+client.on('sent', (d) => { session.sent(d.size); metrics.addSent(d.size); inspector.touch(); sent += 1; el['stat-sent'].textContent = String(sent); logPayload('send', d.origin === 'heartbeat' ? 'PING' : 'SEND', d); });
+client.on('message', (d) => { session.message(d.size); metrics.addRecv(d.size); inspector.touch(); recv += 1; el['stat-recv'].textContent = String(recv); logPayload('recv', 'RECV', d); });
+client.on('latency', ({ ms }) => { metrics.addLatency(ms); el['stat-latency'].textContent = `${ms} ms`; inspector.touch(); });
 client.on('error', (e) => note('error', 'ERROR', errText(e)));
 client.on('close', (d) => {
   session.close(d);
@@ -163,6 +187,7 @@ function connect() {
   const r = client.connect(v.url, pr.list);
   if (!r.ok) { note('error', 'ERROR', errText(r.error)); return; }
   session.start(v.url, pr.list);
+  metrics.reset();
   save('url', stripSensitive(v.url));
   note('info', 'INFO', t('info.connecting', { url: redactUrl(v.url) }));
 }
@@ -217,7 +242,7 @@ el['msg-input'].addEventListener('keydown', (e) => {
 });
 
 // ── Log controls ─────────────────────────────────────────────────────────
-function clearLog() { store.clear(); view.clear(); scheduleCount(); }
+function clearLog() { store.clear(); view.clear(); picks = []; syncPicks(); scheduleCount(); }
 el['btn-clear'].addEventListener('click', clearLog);
 el['btn-export'].addEventListener('click', () => {
   const blob = new Blob([JSON.stringify(store.export(), null, 2)], { type: 'application/json' });
